@@ -18,6 +18,6 @@ Parameter tuning based on ACF and PACF plots.
 Model Evaluation:
 
 Out-of-sample forecast evaluation using various error metrics to compare the performance of both models.
-Data
+Data\
 The data folder contains the dataset on average electricity prices from January 2000 to February 2020, comprising 252 data points. The data was collected by the Bureau of Labor Statistics from 75 urban areas on a monthly basis using mail questionnaires administered by the Department of Energy.
 
