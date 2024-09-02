@@ -3,7 +3,7 @@
 Description: This repository contains the Time Series Analysis project that I completed for a graduate PSTAT course at UCSB in 2024.
 
 Abstract: 
-This project focuses on analyzing and forecasting the average electricity price per kilowatt-hour in U.S. cities using two advanced time series models: the Seasonal Autoregressive Integrated Moving Average (SARIMA) Model and the State Space Model. The dataset used spans from January 2000 to December 2020 and was sourced from the U.S. Bureau of Labor Statistics, containing 252 data points collected from 75 urban areas. The data was gathered by the Bureau of Labor Statistics through mail questionnaires administered by the Department of Energy. The dataset is available via the Federal Reserve Bank of St. Louis.
+This project focuses on analyzing and forecasting the average electricity price per kilowatt-hour in U.S. cities using two advanced time series models: the Seasonal Autoregressive Integrated Moving Average (SARIMA) Model and the State Space Model. The Data folder contains a csv dataset that spans from January 2000 to December 2020, which includes 252 data points collected from 75 urban areas. It is divide it into two parts: a training set (240 data points) and a testing set (12 data points). The data was gathered by the Bureau of Labor Statistics through mail questionnaires administered by the Department of Energy. The dataset is available via the Federal Reserve Bank of St. Louis. The Code folder contains all the R code that analyze the data and predicts. 
 
 Methodology
 1. SARIMA Model
