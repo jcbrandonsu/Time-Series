@@ -7,13 +7,13 @@ This project focuses on analyzing and forecasting the average electricity price 
 
 Methodology
 1. SARIMA Model
-Purpose: Capture and forecast data exhibiting regular seasonal patterns, trends, and autocorrelations.
-Parameters: Tuned using ACF and PACF plots, with model selection based on criteria like AIC, AICc, and BIC.
+Purpose: Capture and forecast data exhibiting regular seasonal patterns, trends, and autocorrelations. \
+Parameters: Tuned using ACF and PACF plots, with model selection based on criteria like AIC, AICc, and BIC.\
 Outcome: The SARIMA model provided accurate forecasts within the 95% confidence interval for the next 12 months.
 2. State Space Model
-Purpose: Decompose the time series into unobserved components (trend and seasonal) and provide real-time estimates using Kalman Filtering and Smoothing.
-Parameters: Estimated using Maximum Likelihood Estimation (MLE).
-Outcome: The State Space Model offered more accurate predictions and better alignment with actual values compared to the SARIMA model.
+Purpose: Decompose the time series into unobserved components (trend and seasonal) and provide real-time estimates using Kalman Filtering and Smoothing. \
+Parameters: Estimated using Maximum Likelihood Estimation (MLE). \
+Outcome: The State Space Model offered more accurate predictions and better alignment with actual values compared to the SARIMA model. 
 
 Results
 1. SARIMA Model
