@@ -1,0 +1,422 @@
+---
+title: "Analysis and Forecasting Average Electricity Prices by Using SARIMA and State Space Models"
+author: |
+  \LARGE Brandon Su \
+  \href{mailto:jiachengsu@ucsb.edu}{jiachengsu@ucsb.edu}
+date: \LARGE June 10th 2024
+output:
+  pdf_document: default
+  html_document: default
+---
+$$\Large \textbf{Abstract}$$
+\large In this project, we analyze the dataset titled "Average Price: Electricity per Kilowatt-Hour in U.S. City Average (APU000072610)", spanning from January 2000 to December 2020. The goal is to forecast future electricity prices and understand the underlying patterns in the data. We employ two modeling approaches: the Seasonal Autoregressive Integrated Moving Average (SARIMA) model and the State Space Model. The SARIMA model effectively captures the seasonality and trend in the data, while the State Space Model provides a flexible framework for decomposing the series into trend and seasonal components. Our analysis shows that both models provide accurate forecasts, with the SARIMA model yielding minimal prediction errors and the State Space Model demonstrating robust smoothing capabilities. The results indicate that the models can effectively forecast future electricity prices, contributing to better electricity energy consumption management and policy development.
+
+\textbf{Keywords}: Average Price, SARIMA, Stationary, Kalman Filter, State Space Model, Forecast. 
+
+\newpage
+\normalsize
+# 1 Introduction
+The average price of electricity per kilowatt-hour is a crucial economic indicator, reflecting the cost of an essential resource. Understanding electricity price patterns and predicting future trends is vital for effective energy consumption and management. Given the irreplaceable role of electricity in daily life and industrial production, monitoring its price is essential for both consumers and businesses. For factories, in particular, electricity costs must be integrated into production planning to ensure cost-effective energy usage. Furthermore, accurate electricity price forecasting is critical for the valuation and risk management of electricity derivatives in financial markets. 
+
+Many studies have focused on predicting future electricity prices in the past using models such as GARCH or various machine learning approaches. Nevertheless, this project aims to apply SARIMA and State Space Models to analyze and forecast electricity prices over the next 12 months. These methods were chosen for their ability to capture seasonality and underlying trends in time series data, providing robust forecasts within a 95% confidence interval. By employing these models, we aim to uncover important patterns and make reliable predictions that can help businesses and consumers better manage their energy consumption and costs.
+
+# 2 Data
+```{r, echo=F, warning=F, message=F}
+# Some useful libraries needed
+library(lubridate)
+library(forecast)
+library(tseries)
+library(MASS)
+library(astsa)
+library(stats)
+library(knitr)
+library(KFAS)
+```
+
+```{r, echo=F, warning=F, message=F}
+# read my csv file first
+electricity <- read.csv("electricity.csv")
+```
+
+```{r, echo=F, warning=F, message=F}
+# convert the 'DATE' column to Date format
+electricity$DATE <- as.Date(electricity$DATE)
+colnames(electricity)[which(colnames(electricity) == 'APU000072610')] <- 'AveragePrice'
+View(electricity)
+```
+This time series dataset covers 21 years of average electricity prices in the United States, containing 252 data points. The data was collected by the Bureau of Labor Statistics from 75 urban areas on a monthly basis using mail questionnaires administered by the Department of Energy. Detailed information and the dataset itself can be accessed via the Federal Reserve Bank of St. Louis' website: [https://fred.stlouisfed.org/series/APU000072610](https://fred.stlouisfed.org/series/APU000072610). The average price per kilowatt-hour is calculated by dividing the total bill, which includes variable rates per kWh, fixed costs, taxes, surcharges, and credits—by the kilowatt-hour usage.
+
+The study of this dataset is significant as energy prices are a major concern for both individuals and industries. By analyzing this data, we aim to forecast future electricity prices and gain a deeper understanding of the energy market, contributing to more informed decision-making in energy consumption and policy development.
+
+Below is the plot of the original dataset.
+
+```{r, echo=F, warning=F, message=F, fig.width=9, fig.height=4.5, fig.align='center'}
+# turn the csv file into a time series dataset
+start_year <- year(electricity$DATE[1])
+start_month <- month(electricity$DATE[1])
+start_date <- c(start_year, start_month)
+electricity_ts <- ts(electricity$AveragePrice, 
+                     start = start_date, frequency = 12)
+ts.plot(electricity_ts, lwd = 1.5, ylab = "Average Price", xlab = "Time (Years)", 
+        main = "Average Price: Electricity per Kilowatt-Hour from 2000-2020")
+View(electricity)
+```
+\newpage
+Before analyzing the data, we will divide it into two parts: a training set and a testing set. The training set will consist of 240 data points from the years 2000 to 2019, while the testing set will include 12 data points from the year 2020. This separation allows us to develop our model using the training set and then determine its prediction accuracy using the testing set.
+```{r, echo=F, warning=F, message=F}
+training <- electricity_ts[c(1:240)]
+testing <- electricity_ts[c(241:252)]
+training_ts <- ts(training)
+testing_ts <- ts(testing)
+```
+Below is the plot of the training data, along with the Autocorrelation Function (ACF) and Partial Autocorrelation Function (PACF) plots.
+```{r, echo=F, warning=F, message=F, fig.width=8, fig.height=4.5, fig.align='center'}
+# plot the training data
+ts.plot(training_ts, lwd = 1.5, ylab = "Average Price", xlab = "Time", 
+        main = "Average Price: Electricity per Kilowatt-Hour (Training)")
+
+# fit a linear model
+fit1 <- lm(training_ts ~ time(training_ts))
+abline(fit1, col="red", lwd=1.5)
+abline(h=mean(training_ts), col="blue2", lwd=1.5)
+```
+```{r, echo=F, warning=F, message=F, fig.width=9, fig.height=5}
+# plot the ACF and PACF of the original data
+par(mfrow = c(1,2))
+acf(training_ts, lag.max=60)
+pacf(training_ts, lag.max=60)
+```
+\newpage
+
+
+# 3 Methodology
+
+## 3.1 SARIMA Model:
+The Seasonal Autoregressive Integrated Moving Average (SARIMA) model is extended from ARIMA model, which specifically accounts for the seasonality in data. SARIMA is particularly effective for modeling and forecasting data that exhibits regular seasonal patterns in addition to trends and autocorrelations. The general form the model is 
+
+$$\text{SARIMA} \ (p, d, q) \times (P, D, Q)_{s}$$
+
+The original data plot shows there are clear patterns inside a year, and the ACF and PACF of the original data verifies that the series is clearly non-stationary. The red line in the graph suggests a possible linear trend. In addition, the ACF and PACF both indicate that the data has a seasonal pattern, with peaks appearing around lags $12, 24, 36,$ etc. We will explain on how to choose the parameters for the SARIMA model in the next section specifically. 
+
+## 3.2 State Space Model:
+A state space model decomposes the observed time series into unobserved components, namely the trend and seasonal components. 
+
+\textbf{Trend Component}: Captures the long-term movement in electricity prices, reflecting factors such as economic growth and macroeconomic reasons. From the graph, the red line indicating a possible linear trend, which the state space model can effectively capture.
+
+\textbf{Seasonal Component}: Accounts for regular seasonal fluctuations in electricity prices. We can observe that almost every year, there is a cycle where electricity prices rise during the summer and fall during other times.
+
+The state space model is formulated by using two main equations:
+
+\textbf{State Equation}:
+$$
+x_t = \Phi x_{t-1} + w_t, \quad w_t \sim \text{i.i.d} \ N(0, Q)
+$$
+where $x_t$ is a $p \times 1$ valued time series representing the unobserved state variables, and $\Phi$ is the $p \times p$ state transition matrix.
+
+\textbf{Observation Equation}:
+$$
+y_t = A_t x_t + v_t, \quad v_t \sim \text{i.i.d} \ N(0, R)
+$$
+where $A_t$ is the $q \times p$ measurement matrix, $y_t$ are the observed values. This equation describes the relationship between the observed variables $\{y_1, y_2, \dots, y_q\}$ and the unobserved state variables $\{x_1, x_2, \dots, x_q\}$
+
+\textbf{Parameter Estimation}:
+The parameters of the state space model are estimated using maximum likelihood estimation (MLE), which provides efficient and unbiased estimates. \textbf{Kalman Filtering} provides real-time estimates of the unobserved state variables as new data becomes available. \textbf{Smoothing} can retrospectively estimates of the state variables are obtained by considering the entire dataset, thereby enhancing accuracy. \textbf{Forecasting}: The fitted model is used to forecast future electricity prices, including confidence intervals to capture prediction uncertainty.
+
+\newpage
+# 4 Results
+## 4.1 SARIMA Model
+```{r, echo=F, warning=F, message=F, fig.width=8, fig.height=4, fig.align='center'}
+# difference at lag=12 to remove the seasonality
+training_ds<- diff(training_ts, lag=12)
+plot(training_ds, ylab=expression(nabla[12]), 
+     main="De-Seasonalized Training Data")
+fit2 <- lm(training_ds ~ time(training_ds))
+abline(fit2, col="red", lwd=1.5)
+abline(h=mean(training_ds), col="blue2", lwd=1.5)
+```
+The graph of the de-seasonalized training data, where seasonal effects have been removed by differencing at lag 12:
+$$\nabla^{12} Y_t = (1 - B^{12}) Y_t = Y_t - Y_{t-12}$$
+where $Y_t$ is our original data, reveals the underlying trends more clearly. Despite removing seasonality, the data still exhibits a linear trend, indicating that additional differencing is necessary to achieve stationarity.
+
+```{r, echo=F, warning=F, message=F, fig.width=8, fig.height=4, fig.align='center'}
+# de-trend the series
+training_dt <- diff(training_ds, lag=1)
+plot(training_dt, ylab=expression(nabla), 
+     main="De-Trended & De-Seasonalized Training Data", lwd=1)
+fit3 <- lm(training_dt ~ time(training_dt))
+abline(fit3, col="red", lwd=2)
+abline(h=mean(training_dt), col="blue2", lwd=1.5)
+```
+The plot of training data after both de-seasonalizing and de-trending by applying a first-order difference (lag 1):
+$$\nabla \nabla^{12} Y_t = (1 - B)(1-B^{12}) Y_t = Y_t - Y_{t-1} - Y_{t-12} - Y_{t-13}$$
+shows this transformation effectively removes the linear trend, resulting in a dataset that fluctuates around a constant mean, which suggests the stationarity.  
+
+```{r, echo=F, warning=F, message=F, fig.width=8, fig.height=4}
+# plot the histogram of the transformed data
+hist(training_dt, prob=TRUE, 
+     main="Historgram of De-Seasonalized and De-trended Training Data")
+expectation <- mean(training_dt)
+se <- sqrt(var(training_dt))
+curve(dnorm(x, expectation, se), add=TRUE)
+```
+The histogram shows the distribution of the transformed data. After removing both seasonality and trend, the data appears to follow a Gaussian distribution well. This is a positive indication that the transformations have helped in making the data stationary. 
+
+```{r, echo=F, warning=F, message=F, fig.width=10, fig.height=4.5, fig.align='center'}
+# the ACF and PACF for the tranformed data
+par(mfrow = c(1,2))
+acf(training_dt, lag.max=60, 
+    main="ACF of the Stationary Training Data")
+pacf(training_dt, lag.max=60, ylab="PACF", 
+     main="PACF of the Stationary Training Data")
+```
+The ACF plot of the stationary training data displays significantly reduced autocorrelations compared to the original series, with most lags falling within the confidence intervals, indicating reduced serial correlation. The PACF plot also shows that partial autocorrelations are mostly within the confidence intervals.
+
+### Diagnostics
+After applying the transformations, we have made the training data stationary, allowing us to fit the SARIMA $(p, d, q) \times (P, D, Q)_{s}$ model. 
+
+\textbf{Seasonal Component}: Since we have differenced at lag $12$ once to remove seasonality, so, we can determine that $s = 12$ and $D = 1$. From the ACF graph, there is a strong peak at lag 12, followed by oscillations within the confidence interval. This suggests that $Q = 1$ will be a good choice for the MA part. The PACF graph shows peaks at lags 12, 24, and 48. Therefore, we should consider $P = 1, 2, 3, 4$ for the AR part. 
+
+\textbf{Non-Seasonal Component}:  Since we have difference at lag $1$ to remove the linear trend, so, we can set $d = 1$. Within a season, the ACF plot indicates peaks at $5$, therefore, we can assume $q = 5$ for MA part. The PACF plot shows peaks at lags 2 and 4, so we can consider $p = 0, 2, 4$ for AR part. 
+
+### Model Selection
+Noew, we will apply the parameters identified in the previous part to fit the data using SARIMA models.
+```{r, echo=F, warning=F, message=F, include=F}
+# run the possible models
+model1 <- sarima(training_ts, p=0, d=1, q=5, P=1, D=1, Q=1, S=12, details=F)
+model2 <- sarima(training_ts, p=0, d=1, q=5, P=2, D=1, Q=1, S=12, details=F)
+model3 <- sarima(training_ts, p=0, d=1, q=5, P=3, D=1, Q=1, S=12, details=F)
+model4 <- sarima(training_ts, p=0, d=1, q=5, P=4, D=1, Q=1, S=12, details=F)
+model5 <- sarima(training_ts, p=2, d=1, q=5, P=1, D=1, Q=1, S=12, details=F)
+model6 <- sarima(training_ts, p=2, d=1, q=5, P=2, D=1, Q=1, S=12, details=F)
+model7 <- sarima(training_ts, p=2, d=1, q=5, P=3, D=1, Q=1, S=12, details=F)
+model8 <- sarima(training_ts, p=2, d=1, q=5, P=4, D=1, Q=1, S=12, details=F)
+model9 <- sarima(training_ts, p=4, d=1, q=5, P=1, D=1, Q=1, S=12, details=F)
+model10 <- sarima(training_ts, p=4, d=1, q=5, P=2, D=1, Q=1, S=12, details=F)
+model11 <- sarima(training_ts, p=4, d=1, q=5, P=3, D=1, Q=1, S=12, details=F)
+model12 <- sarima(training_ts, p=4, d=1, q=5, P=4, D=1, Q=1, S=12, details=F)
+```
+
+
+```{r, echo=F, warning=F, message=F, fig.width=8, fig.height=4}
+# create a table include the models and their AICs, AICcs, and BICs
+AICs <- c(model1$ICs[1], model2$ICs[1], model3$ICs[1], model4$ICs[1], model5$ICs[1],
+model6$ICs[1], model7$ICs[1], model8$ICs[1], model9$ICs[1], model10$ICs[1], 
+model11$ICs[1], model12$ICs[1])
+
+AICcs <- c(model1$ICs[2], model2$ICs[2], model3$ICs[2], model4$ICs[2], model5$ICs[2],
+model6$ICs[2], model7$ICs[2], model8$ICs[2], model9$ICs[2], model10$ICs[2], 
+model11$ICs[2], model12$ICs[2])
+
+BICs <- c(model1$ICs[3], model2$ICs[3], model3$ICs[3], model4$ICs[3], model5$ICs[3],
+model6$ICs[3], model7$ICs[3], model8$ICs[3], model9$ICs[3], model10$ICs[3], 
+model11$ICs[3], model12$ICs[3])
+
+model <- c(1:12) 
+Name <- c("SARIMA(0, 1, 5) × (1, 1, 1)", "SARIMA(0, 1, 5) × (2, 1, 1)", 
+          "SARIMA(0, 1, 5) × (3, 1, 1)", "SARIMA(0, 1, 5) × (4, 1, 1)", 
+          "SARIMA(2, 1, 5) × (1, 1, 1)", "SARIMA(2, 1, 5) × (2, 1, 1)",
+          "SARIMA(2, 1, 5) × (3, 1, 1)", "SARIMA(2, 1, 5) × (4, 1, 1)", 
+          "SARIMA(4, 1, 5) × (1, 1, 1)", "SARIMA(4, 1, 5) × (2, 1, 1)",
+          "SARIMA(4, 1, 5) × (3, 1, 1)", "SARIMA(4, 1, 5) × (4, 1, 1)")
+
+criteria_table <- data.frame(Model=model, "Model Specification"=Name, 
+                             AIC=AICs, AICc = AICcs, BIC=BICs)
+kable(criteria_table, caption = "Model and Selection Criteria Table")
+```
+
+After testing these 12 models, we found that \textbf{Model 4} has the smallest AIC and AICc, indicating a good fit with the data. However, \textbf{Model 1} has the second lowest AIC and AICc, and the smallest BIC. To avoid overfitting and parameter redundancy, we decided to select \textbf{Model 1}, SARIMA $(0, 1, 5) \times (1, 1, 1)_{12}$, for our analysis, as it balances the goodness of fit and tidiness. Below are the coefficients table. 
+
+```{r, echo=F, warning=F, message=F, fig.width=8, fig.height=4}
+Model1 <- arima(training_ts, order = c(0,1,5), 
+                seasonal = list(order = c(1, 1, 1), period = 12), method = "ML")
+residual <- residuals(Model1)
+summary(Model1)
+```
+
+```{r, echo=F, warning=F, message=F, fig.width=8, fig.height=4.5, include=F}
+par(mfrow = c(1,2))
+acf(residual, main="ACF")
+pacf(residual, main="PACF")
+hist(residual, main="Histogram of Residuals by Model 1", 
+     xlab="Residuals", prob=TRUE)
+expec <- mean(residual)
+sd <- sqrt(var(residual))
+curve(dnorm(x, mean=expec, sd=sd), add=TRUE)
+qqnorm(residual)
+qqline(residual, col="blue")
+```
+
+
+```{r, echo=F, warning=F, message=F, results='hide', fig.keep='all'}
+sarima(training_ts, p=0, d=1, q=5, P=1, D=1, Q=1, S=12, detials=F, model=TRUE)
+```
+The \textbf{standardized residuals} plot for the SARIMA $(0, 1, 5) \times (1, 1, 1)_{12}$ model shows that the residuals are centered around zero with no apparent patterns, most of the residuals reside within the 2 standard deviation, indicating that the model has effectively captured the data's structure.
+
+The \textbf{ACF plot} of the residuals reveals that all autocorrelations fall within the 95% confidence intervals, suggesting no significant autocorrelation remains.
+
+The \textbf{Q-Q plot} shows that points lie approximately along the 45-degree line, suggests that the residuals follow a Gaussain distribution, which supports our normality assumption for the model.  
+
+The \textbf{Ljung-Box test p-values} are all above the 0.05 significance level, indicating no significant autocorrelation in the residuals up to the specified lag.
+
+### Forecast
+
+After thoroughly verifying the SARIMA model, we will now use it to forecast for the average electricity price in the next 12 months and compare with the actual data from the testing periods to evaluate the model's prediction accuracy. 
+
+\newpage
+```{r, echo=F, warning=F, message=F, fig.width=8, fig.height=4}
+# forecast the average price for the following 12 months
+future_data <- predict(Model1, n.ahead=12)
+# future_data
+future <- data.frame(Month = 1:12, Forecast = future_data$pred, StandardError = future_data$se)
+kable(future, col.names = c("Month", "Forecast", "Standard Error"))
+```
+
+```{r, echo=F, warning=F, message=F}
+# construct a 95% confidence interval for the predicted values
+lower <- future_data$pred - 2*future_data$se
+upper <- future_data$pred + 2*future_data$se
+```
+
+```{r, echo=F, warning=F, message=F, fig.width=8, fig.height=4.5}
+# plot the data
+plot(training_ts, xlim=c(length(training_ts)+1, (length(training_ts)+12)), 
+     ylim=c(min(training_ts), 0.17), xlab="Future 12 Months", 
+     ylab="Average Price", main="Forecast Values (by SARIMA) vs Actual Values")
+# upper bound line
+lines((length(training_ts)+1):(length(training_ts)+12), upper, col="blue", lty="dashed", lwd=1)
+# lower bound line
+lines((length(training_ts)+1):(length(training_ts)+12), lower, col="blue", lty="dashed", lwd=1)
+# forecasted values
+points((length(training_ts)+1):(length(training_ts)+12), future_data$pred, col="red", cex=0.9)
+# actual values from test data
+points((length(training_ts)+1):(length(training_ts)+12), testing_ts, col="blue", cex=0.9)
+# legend
+legend("bottomright", pch=1, col=c("red", "blue"), legend=c("Forecast", "Actual"), bty="n")
+```
+The plot above compares the forecasted values by the SARIMA $(0, 1, 5) \times (1, 1, 1)_{12}$ model with the actual values over the next 12 months. We zoomed in on the forecasted values and plotted them along with the test data. The results show that our model provides accurate predictions for the next 12 months. The differences between the predicted and actual prices are minimal, and the actual values consistently fall within the 95% confidence intervals of the forecasted values (the blue dashed lines). Additionally, some predicted values are almost identical to the actual average electricity prices, indicating the SARIMA model's prediction accuracy and robustness. 
+
+\newpage
+
+## 4.2 State Space Model
+### Kalman Filtering and Smoothing
+```{r, echo=F, warning=F, message=F}
+# define and fit a state space model with trend and seasonal components
+state_space <- SSModel(training_ts ~ SSMtrend(degree = 1, Q = list(NA)) + 
+                 SSMseasonal(period = 12, sea.type = "dummy", Q = NA), H = NA)
+# estimate parameters
+fit_SS <- fitSSM(state_space, inits = c(0.1, 0.1, 0.1))
+```
+Now, we are going to move to another model as mentioned in the \textbf{Methodology} section. The observed data $y_t$ can be decomposed into the trend $T_t$ and seasonal component $S_t$, mathematically can be expressed as:
+$$y_t = T_t + S_t + v_t; \quad t = 1, \dots, n$$
+Below is the plot of the decomposition. 
+```{r, echo=F, warning=F, message=F, fig.width=8, fig.height=4.5}
+# filtering and smoothing
+kfs <- KFS(fit_SS$model)
+# smoothed states
+smoothed_states <- kfs$alphahat
+# filtered states
+filtered_states <- kfs$att
+# observations
+observations <- as.vector(training_ts)
+```
+
+```{r, echo=F, warning=F, message=F, fig.width=8, fig.height=6}
+# trend and seasonal components 
+par(mfrow = c(3,1))
+trend <- smoothed_states[, "level"]
+plot(time(training_ts), trend, type = "l", ylab = "Trend", xlab = "Time", 
+     main = expression("Trend Component (" * T[t] * ")"))
+seasonal <- rowSums(smoothed_states[, grep("sea_dummy", colnames(smoothed_states))])
+plot(time(training_ts), seasonal, type = "l", col = "darkgreen", ylab = "Seasonal Component", 
+     xlab = "Time", main = expression("Seasonal Component ("*S[t]*")"))
+fitted <- trend + seasonal
+plot(time(training_ts), fitted, type="l", ylab = "Combined", xlab = "Time", 
+     main = expression("Trend + Seasonal Component"))
+```
+In addition, we can apply \textbf{Kalman filter} and smoothing to the data and plot them with our original data. This process allows us to see the data with less noise and estimates the hidden states, making a more clear view of the underlying trend and seasonal component. 
+
+The black line represents the actual observed average electricity prices over time. The blue line shows the real-time estimates of the underlying trend and seasonal components using the Kalman filter. The red line represents the smoothed states obtained using the Kalman smoother. This close alignment of the smoothed states with the observed data indicates that the state space model effectively captures the essential structure of the time series data.
+
+Below is the plot.
+```{r, echo=F, warning=F, message=F, fig.width=8, fig.height=4, fig.align='center'}
+# plot the observations, filtered states, and smoothed states
+plot(time(training_ts), observations, type = "l", col = "black", lwd=1.5,
+     ylab = "Average Price", xlab = "Time", 
+     main = "Observed and Smoothed States")
+lines(filtered_states[,1], col = "blue", lwd=1.5)
+lines(smoothed_states[,1], col = "red", lwd=1.5)
+# legend
+legend("bottomright", legend = c("Observed", "Filtered", "Smoothed"), 
+       col = c("black","blue", "red"), lty=1, bty="n", lwd=1.5)
+```
+
+### Forecast
+After analyze the data, we can use the state space model to forecast for the average electricity price in the next 12 months and compare with the actual data from the testing periods to evaluate the model's prediction accuracy.
+```{r, echo=F, warning=F, message=F}
+# forecast the next 12 months for testing period
+SS_forecast <- predict(fit_SS$model, n.ahead = 12, 
+                       interval = "confidence", level = 0.95)
+forecast_values <- SS_forecast[, 1]
+forecast_lower <- SS_forecast[ , "lwr"]
+forecast_upper <- SS_forecast[ , "upr"]
+forecast_se <- (forecast_upper - forecast_values) / 2
+# get the confidence interval
+Lower <- forecast_values - 2 * forecast_se
+Upper <- forecast_values + 2 * forecast_se
+```
+
+```{r, echo=F, warning=F, message=F, fig.width=8, fig.height=4}
+plot(training_ts, xlim=c(length(training_ts)+1, (length(training_ts)+12)), 
+     ylim=c(min(training_ts), 0.17), xlab="Future 12 Months", ylab="Average Price", 
+     main="Forecast Values (by State Space Model) vs Actual Values")
+
+# upper bound line
+lines((length(training_ts)+1):(length(training_ts)+12), 
+      Lower, col = "blue", lty = 2)
+# lower bound line
+lines((length(training_ts)+1):(length(training_ts)+12), 
+      Upper, col = "blue", lty = 2)
+# forecasted values
+points((length(training_ts)+1):(length(training_ts)+12), 
+       forecast_values, col = "red", cex=0.9)
+# actual values from test data
+points((length(training_ts)+1):(length(training_ts)+12), 
+       testing_ts, col = "blue", cex=0.9)
+
+# legend
+legend("bottomright", pch=1, col=c("red", "blue"), legend=c("Forecast", "Actual"), bty="n")
+```
+The plot above compares the forecasted values by the State Space model with the actual values from the testing period. It shows that our model provides accurate predictions. The differences between the predicted and actual prices are minimal, with actual values consistently fall within the 95% confidence intervals of the forecasted values (the blue dashed lines). Furthermore, the State Space model's predictions are more closely aligned with the actual values than SARIMA model, indicating higher prediction accuracy. 
+
+\newpage
+
+# 5 Conclusion and Future Study
+
+This study investigated the average electricity prices in U.S. cities by using two modeling techniques: the Seasonal Autoregressive Integrated Moving Average (SARIMA) model and the State Space Model. Both models demonstrate a high level of predictive accuracy and effectively capture the underlying trends and seasonal components of the electricity price data. Additionally, our analysis reveals a relatively constant cyclic behavior in electricity prices, highlighting the recurring patterns over time, which is a crucial finding during this analysis. 
+
+For future research and study, we would love to use other methods like Machine Learning that may capture any other nonlinear relationships within the data, which will contribute more to accurate energy price predictions and allow more effective policy making and management. Also, we can apply the models we used in this study to other time series datasets and explore other interesting results. 
+
+
+\newpage
+# 6 Reference
+[1] Ichiba, T. PSTAT 174 Time Series. Department of Statistics & Applied Probability, Center for Financial Mathematics and Actuarial Research, University of California, Santa Barbara. Spring 2023. Lecture 9: Building ARIMA models. URL:
+[https://ucsb.instructure.com/courses/19585/files/2617975?module_item_id=1171146](https://ucsb.instructure.com/courses/19585/files/2617975?module_item_id=1171146)
+
+[2] Ichiba, T. PSTAT 174/274 Time Series. Department of Statistics & Applied Probability, Center for Financial Mathematics and Actuarial Research, University of California, Santa Barbara. Spring 2024. Lecture 16: ARMAX, State Space Models. URL: [https://ucsb.instructure.com/courses/19585/pages/lecture-16?module_item_id=1171171](https://ucsb.instructure.com/courses/19585/pages/lecture-16?module_item_id=1171171)
+
+[3] Ichiba, T. PSTAT 174/274 Time Series. Department of Statistics & Applied Probability, Center for Financial Mathematics and Actuarial Research, University of California, Santa Barbara. Spring 2024. Lecture 17: Filtering, Smoothing, Forecasting. URL: [https://ucsb.instructure.com/courses/19585/pages/lecture-17?module_item_id=1249255](https://ucsb.instructure.com/courses/19585/pages/lecture-17?module_item_id=1249255)
+
+[4] Helske, J. Kalman Filter and Smoother for Exponential Family State Space Models. R package version 1.5.1. URL: [https://cran.r-project.org/web/packages/KFAS/KFAS.pdf.](https://cran.r-project.org/web/packages/KFAS/KFAS.pdf.)
+
+[5] Kotzé, K. State-Space Modelling. URL: [https://kevinkotze.github.io/ts-4-state-space/](https://kevinkotze.github.io/ts-4-state-space/)
+
+[6] U.S. Bureau of Labor Statistics. Average Price: Electricity per Kilowatt-Hour in U.S. City Average [APU000072610], retrieved from FRED, Federal Reserve Bank of St. Louis. URL:
+[https://fred.stlouisfed.org/series/APU000072610](https://fred.stlouisfed.org/series/APU000072610), May 21, 2024.
+
+\newpage
+
+# 7 Appendix (Code)
+```{r appendix, ref.label=knitr::all_labels(), echo=TRUE, eval=FALSE}
+
+```
+
