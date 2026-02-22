@@ -1,4 +1,4 @@
-# Time-Series
+# Average electricity price prediction
 
 Description: This repository contains the Time Series Analysis project that I completed for a graduate PSTAT course at UCSB.
 
